@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const bodyparser = require("body-parser");
 const {MongoClient} = require("mongodb");
@@ -7,16 +8,16 @@ const app = express();
 app.use(bodyparser.urlencoded({extended: true}));
 
 const Jikan = axios.create({
-    baseURL: "https://api.jikan.moe/v4/"
+    baseURL: process.env.JIKAN_URL
 });
 
-const dbUri = "mongodb+srv://anidex-scrapper-api:Nr9Ix9KKIGeoaAY6@cluster0.wg6rk.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"
+const dbUri = process.env.DB_HOST;
 const client = new MongoClient(dbUri);
 
 async function dbQuery(category, doc) {
     try {
         await client.connect();
-        const database = client.db("MAL");
+        const database = client.db(process.env.DB_NAME);
         const collection = database.collection(category);
 
         const filter = {"data.mal_id": doc.data.mal_id}
@@ -54,6 +55,46 @@ app.get("/anime/:id", (req, res) => {
     Jikan.get("anime/" + req.params.id).then(async ({status, data}) => {
         console.log(current + status);
         const response = await dbQuery("animes", data).catch(console.dir);
+        res.status(status);
+        res.send(response);
+    }).catch((err) => {
+        if (err.response) {
+            console.log(current + err.response.status);
+            res.status(err.response.status);
+            res.send(err.response.data);
+        } else {
+            console.log(err);
+            res.status(400);
+            res.send(err);
+        }
+    });
+});
+
+app.get("/character/:id", (req, res) => {
+    const current = "CHARACTER: " + req.params.id + ": ";
+    Jikan.get("characters/" + req.params.id).then(async ({status, data}) => {
+        console.log(current + status);
+        const response = await dbQuery("characters", data).catch(console.dir);
+        res.status(status);
+        res.send(response);
+    }).catch((err) => {
+        if (err.response) {
+            console.log(current + err.response.status);
+            res.status(err.response.status);
+            res.send(err.response.data);
+        } else {
+            console.log(err);
+            res.status(400);
+            res.send(err);
+        }
+    });
+});
+
+app.get("/manga/:id", (req, res) => {
+    const current = "MANGA: " + req.params.id + ": ";
+    Jikan.get("manga/" + req.params.id).then(async ({status, data}) => {
+        console.log(current + status);
+        const response = await dbQuery("mangas", data).catch(console.dir);
         res.status(status);
         res.send(response);
     }).catch((err) => {
