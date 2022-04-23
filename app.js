@@ -86,10 +86,23 @@ app.get("/anime/:id", (req, res) => {
 app.get("/character/:id", (req, res) => {
     const current = "CHARACTER: " + req.params.id + ": ";
     Jikan.get("characters/" + req.params.id).then(async ({status, data}) => {
-        console.log(current + status);
-        const response = await dbQuery("characters", data).catch(console.dir);
-        res.status(status);
-        res.send(response);
+        if ("data" in data) {
+            console.log(current + status);
+            const response = await dbQuery("characters", data).catch(console.dir);
+            res.status(status);
+            res.send(response);
+        } else {
+            if ("status" in data) {
+                console.log(current + data.status);
+                res.status(data.status);
+                res.send(data);
+            } else {
+                console.log(current + 501);
+                res.status(501);
+                res.send(data);
+            }
+        }
+        
     }).catch((err) => {
         if (err.response) {
             console.log(current + err.response.status);
@@ -106,10 +119,23 @@ app.get("/character/:id", (req, res) => {
 app.get("/manga/:id", (req, res) => {
     const current = "MANGA: " + req.params.id + ": ";
     Jikan.get("manga/" + req.params.id).then(async ({status, data}) => {
-        console.log(current + status);
-        const response = await dbQuery("mangas", data).catch(console.dir);
-        res.status(status);
-        res.send(response);
+        if ("data" in data) {
+            console.log(current + status);
+            const response = await dbQuery("mangas", data).catch(console.dir);
+            res.status(status);
+            res.send(response);
+        } else {
+            if ("status" in data) {
+                console.log(current + data.status);
+                res.status(data.status);
+                res.send(data);
+            } else {
+                console.log(current + 501);
+                res.status(501);
+                res.send(data);
+            }
+        }
+        
     }).catch((err) => {
         if (err.response) {
             console.log(current + err.response.status);
