@@ -14,34 +14,36 @@ const Jikan = axios.create({
 const dbUri = process.env.DB_HOST;
 const client = new MongoClient(dbUri);
 
-async function dbQuery(category, doc) {
+async function insertData(category, docs) {
     try {
         await client.connect();
         const database = client.db(process.env.DB_NAME);
         const collection = database.collection(category);
 
-        const filter = {"data.mal_id": doc.data.mal_id}
+        //const filter = {"data.mal_id": docs.data.mal_id}
 
         let response = {
             success: false,
             operation: null,
-            id: null
+            ids: null
         };
 
-        const existing = await collection.findOne(filter);
+        //const existing = await collection.findOne(filter);
+        const existing = false;
         if (existing) {
-            const queryResult = await collection.findOneAndReplace(filter, doc);
+            const queryResult = await collection.findOneAndReplace(filter, docs);
             response = {
                 success: queryResult.lastErrorObject.updatedExisting,
                 operation: "update",
-                id: queryResult.value._id
+                ids: queryResult.value._id
             };
         } else {
-            const queryResult = await collection.insertOne(doc);
+            const queryResult = await collection.insertMany(docs);
+            console.log(queryResult);
             response = {
                 success: queryResult.acknowledged,
                 operation: "insert",
-                id: queryResult.insertedId
+                ids: queryResult.insertedIds
             };
         }
         return response;
@@ -55,7 +57,7 @@ app.get("/anime/:id", (req, res) => {
     Jikan.get("anime/" + req.params.id).then(async ({status, data}) => {
         if ("data" in data) {
             console.log(current + status);
-            const response = await dbQuery("animes", data).catch(console.dir);
+            const response = await insertData("animes", data).catch(console.dir);
             res.status(status);
             res.send(response);
         } else {
@@ -83,12 +85,16 @@ app.get("/anime/:id", (req, res) => {
     });
 });
 
-app.get("/character/:id", (req, res) => {
-    const current = "CHARACTER: " + req.params.id + ": ";
-    Jikan.get("characters/" + req.params.id).then(async ({status, data}) => {
-        if ("data" in data) {
+app.get("/characters/:page", (req, res) => {
+    const current = "CHARACTERS PAGE: " + req.params.page + ": ";
+    Jikan.get("characters?page=" + req.params.page).then(async ({status, data}) => {
+        if ("data" in data && "pagination" in data) {
             console.log(current + status);
-            const response = await dbQuery("characters", data).catch(console.dir);
+            const dbRS = await insertData("characters", data.data).catch(console.dir);
+            const response = {
+                pagination: data.pagination,
+                response: dbRS
+            }
             res.status(status);
             res.send(response);
         } else {
