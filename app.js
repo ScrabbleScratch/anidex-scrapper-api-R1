@@ -14,14 +14,35 @@ const Jikan = axios.create({
 const dbUri = process.env.DB_HOST;
 const client = new MongoClient(dbUri);
 
-//INSERT DATA FROM SINGLE REQUEST
-async function insertSingleData(category, doc) {
+// CHECK EXISTANCE OF AN ENTRY WITHIN DATABASE
+async function checkExistance(category, id) {
     try {
         await client.connect();
         const database = client.db(process.env.DB_NAME);
         const collection = database.collection(category);
 
-        const filter = {"mal_id": doc.mal_id}
+        const filter = {"mal_id": parseInt(id)};
+
+        const result = await collection.findOne(filter);
+        
+        if (result) {
+            return true;
+        } else {
+            return false;
+        }
+    } finally {
+        await client.close();
+    }
+}
+
+// INSERT DATA FROM SINGLE REQUEST
+async function insertSingleData(category, id, doc) {
+    try {
+        await client.connect();
+        const database = client.db(process.env.DB_NAME);
+        const collection = database.collection(category);
+
+        const filter = {"mal_id": parseInt(id)};
 
         let response = {
             success: false,
@@ -31,7 +52,7 @@ async function insertSingleData(category, doc) {
 
         const existing = await collection.findOne(filter);
         if (existing) {
-            const queryResult = await collection.findOneAndReplace(filter, doc);
+            const queryResult = await collection.findOneAndUpdate(filter, {$set: doc});
             response = {
                 success: queryResult.lastErrorObject.updatedExisting,
                 operation: "update",
@@ -107,15 +128,16 @@ async function insertBatchData(category, docs) {
 
 const availableCategories = ["anime", "characters", "manga"];
 
-// SINGLE REQUEST
+// SINGLE REQUESTS
 app.get("/:category/:id", (req, res) => {
     const category = req.params.category.toLowerCase();
+    const id = req.params.id;
     if (availableCategories.includes(category)) {
-        const current = category.toUpperCase() + ": " + req.params.id + ": ";
-        Jikan.get(category + "/" + req.params.id).then(async ({status, data}) => {
+        const current = category.toUpperCase() + ": " + id + ": ";
+        Jikan.get(category+"/"+id).then(async ({status, data}) => {
             if ("data" in data) {
                 console.log(current + status);
-                const response = await insertSingleData(category, data.data).catch(console.dir);
+                const response = await insertSingleData(category, id, data.data).catch(console.dir);
                 res.status(status);
                 res.send(response);
             } else {
@@ -147,17 +169,86 @@ app.get("/:category/:id", (req, res) => {
             status_code: 400,
             error: "Unknown category!"
         };
-        res.status(400);
+        res.status(response.status_code);
         res.send(response);
     }
 });
 
-// BATCH REQUEST
+app.get("/:category/:id/details", async (req, res) => {
+    const category = req.params.category.toLowerCase();
+    const id = req.params.id;
+    if (availableCategories.includes(category)) {
+        let current = category.toUpperCase() + " DETAILS: " + id + ": ";
+        if (await checkExistance(category, id)) {
+            let availableDetails;
+            switch (category) {
+                case "anime":
+                    availableDetails = ["characters", "staff", "pictures", "statistics", "recommendations", "relations", "themes", "external"];
+                    break;
+                case "characters":
+                    availableDetails = ["anime", "manga", "voices", "pictures"];
+                    break;
+                case "manga":
+                    availableDetails = ["characters", "pictures", "statistics", "recommendations", "relations", "external"];
+                    break;
+                default:
+                    availableDetails = [];
+                    break;
+            }
+            
+            // FUNCTION TO MAKE A PAUSE
+            function sleep(ms) {
+                return new Promise((resolve) => {
+                setTimeout(resolve, ms);
+                });
+            }
+
+            const doc = {};
+            for (let i=0; i < availableDetails.length; i++) {
+                const detail = availableDetails[i];
+                await Jikan.get(category+"/"+id+"/"+detail).then(async ({status, data}) => {
+                    if ("data" in data) {
+                        if ("status" in data) {
+                            current += " " + data.status;
+                        } else {
+                            current += " " + status;
+                            doc[detail+"_data"] = data.data;
+                        }
+                    } else {
+                        current += " " + 501;
+                    }
+                });
+                await sleep(1000);
+            };
+            console.log(current);
+            const response = await insertSingleData(category, id, doc);
+            res.send(response);
+        } else {
+            response = {
+                status_code: 406,
+                error: "Id not found within database. Add it before requesting details!"
+            };
+            res.status(response.status_code);
+            res.send(response);
+        }
+    } else {
+        console.log("Unknown category");
+        response = {
+            status_code: 400,
+            error: "Unknown category!"
+        };
+        res.status(response.status_code);
+        res.send(response);
+    }
+});
+
+// BATCH REQUESTS
 app.get("/batch/:category/:page", (req, res) => {
     const category = req.params.category.toLowerCase();
+    const page = req.params.page;
     if (availableCategories.includes(category)) {
-        const current = category.toUpperCase() + " PAGE: " + req.params.page + ": ";
-        Jikan.get(category + "?page=" + req.params.page).then(async ({status, data}) => {
+        const current = category.toUpperCase() + " PAGE: " + page + ": ";
+        Jikan.get(category+"?page="+page).then(async ({status, data}) => {
             if ("data" in data && "pagination" in data) {
                 console.log(current + status);
                 const dbRS = await insertBatchData(category, data.data).catch(console.dir);
@@ -195,7 +286,7 @@ app.get("/batch/:category/:page", (req, res) => {
             status_code: 400,
             error: "Unknown category!"
         };
-        res.status(400);
+        res.status(response.status_code);
         res.send(response);
     }
 });
