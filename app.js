@@ -14,13 +14,13 @@ const Jikan = axios.create({
 const dbUri = process.env.DB_HOST;
 const client = new MongoClient(dbUri);
 
-async function insertData(category, docs) {
+client.connect();
+
+async function insertBatchData(category, docs) {
     try {
-        await client.connect();
+        // await client.connect();
         const database = client.db(process.env.DB_NAME);
         const collection = database.collection(category);
-
-        //const filter = {"data.mal_id": docs.data.mal_id}
 
         let response = {
             success: false,
@@ -28,131 +28,94 @@ async function insertData(category, docs) {
             ids: null
         };
 
-        //const existing = await collection.findOne(filter);
-        const existing = false;
-        if (existing) {
-            const queryResult = await collection.findOneAndReplace(filter, docs);
-            response = {
-                success: queryResult.lastErrorObject.updatedExisting,
-                operation: "update",
-                ids: queryResult.value._id
+        const existingIds = await collection.distinct("mal_id");
+        const toUpdate = [];
+        const toInsert = [];
+        docs.forEach(doc => {
+            if (existingIds.includes(doc.mal_id)) toUpdate.push(doc);
+            else toInsert.push(doc)
+        });
+
+        // console.log(toUpdate.length, toInsert.length);
+
+        if (toUpdate.length > 0) {
+            const succeded = [];
+            const failed = [];
+            for (let i=0; i < toUpdate.length; i++) {
+                const doc = toUpdate[i];
+                const queryResult = await collection.updateOne({mal_id: doc.mal_id}, {$set: doc});
+                if (queryResult.acknowledged) succeded.push(queryResult.upsertedId ?? doc.mal_id)
+                else failed.push(queryResult.upsertedId ?? doc.mal_id)
             };
-        } else {
-            const queryResult = await collection.insertMany(docs);
-            console.log(queryResult);
             response = {
-                success: queryResult.acknowledged,
+                operation: "update",
+                success: succeded,
+                fail: failed
+            };
+        }
+        if (toInsert.length > 0) {
+            const queryResult = await collection.insertMany(docs);
+            response = {
                 operation: "insert",
+                success: queryResult.acknowledged,
                 ids: queryResult.insertedIds
             };
         }
         return response;
     } finally {
-        await client.close();
+        // await client.close();
     }
 }
 
-app.get("/anime/:id", (req, res) => {
-    const current = "ANIME: " + req.params.id + ": ";
-    Jikan.get("anime/" + req.params.id).then(async ({status, data}) => {
-        if ("data" in data) {
-            console.log(current + status);
-            const response = await insertData("animes", data).catch(console.dir);
-            res.status(status);
-            res.send(response);
-        } else {
-            if ("status" in data) {
-                console.log(current + data.status);
-                res.status(data.status);
-                res.send(data);
-            } else {
-                console.log(current + 501);
-                res.status(501);
-                res.send(data);
-            }
-        }
-        
-    }).catch((err) => {
-        if (err.response) {
-            console.log(current + err.response.status);
-            res.status(err.response.status);
-            res.send(err.response.data);
-        } else {
-            console.log(err);
-            res.status(400);
-            res.send(err);
-        }
-    });
-});
+const availableCategories = ["anime", "characters", "manga"];
 
-app.get("/characters/:page", (req, res) => {
-    const current = "CHARACTERS PAGE: " + req.params.page + ": ";
-    Jikan.get("characters?page=" + req.params.page).then(async ({status, data}) => {
-        if ("data" in data && "pagination" in data) {
-            console.log(current + status);
-            const dbRS = await insertData("characters", data.data).catch(console.dir);
-            const response = {
-                pagination: data.pagination,
-                response: dbRS
-            }
-            res.status(status);
-            res.send(response);
-        } else {
-            if ("status" in data) {
-                console.log(current + data.status);
-                res.status(data.status);
-                res.send(data);
+// BATCH REQUEST
+app.get("/batch/:category/:page", (req, res) => {
+    const category = req.params.category.toLowerCase();
+    if (availableCategories.includes(category)) {
+        const current = category.toUpperCase() + " PAGE: " + req.params.page + ": ";
+        Jikan.get(category + "?page=" + req.params.page).then(async ({status, data}) => {
+            if ("data" in data && "pagination" in data) {
+                console.log(current + status);
+                const dbRS = await insertBatchData(category, data.data).catch(console.dir);
+                const response = {
+                    pagination: data.pagination,
+                    response: dbRS
+                }
+                res.status(status);
+                res.send(response);
             } else {
-                console.log(current + 501);
-                res.status(501);
-                res.send(data);
+                if ("status" in data) {
+                    console.log(current + data.status);
+                    res.status(data.status);
+                    res.send(data);
+                } else {
+                    console.log(current + 501);
+                    res.status(501);
+                    res.send(data);
+                }
             }
-        }
-        
-    }).catch((err) => {
-        if (err.response) {
-            console.log(current + err.response.status);
-            res.status(err.response.status);
-            res.send(err.response.data);
-        } else {
-            console.log(err);
-            res.status(400);
-            res.send(err);
-        }
-    });
-});
-
-app.get("/manga/:id", (req, res) => {
-    const current = "MANGA: " + req.params.id + ": ";
-    Jikan.get("manga/" + req.params.id).then(async ({status, data}) => {
-        if ("data" in data) {
-            console.log(current + status);
-            const response = await dbQuery("mangas", data).catch(console.dir);
-            res.status(status);
-            res.send(response);
-        } else {
-            if ("status" in data) {
-                console.log(current + data.status);
-                res.status(data.status);
-                res.send(data);
+        }).catch((err) => {
+            if (err.response) {
+                console.log(current + err.response.status);
+                res.status(err.response.status);
+                res.send(err.response.data);
             } else {
-                console.log(current + 501);
-                res.status(501);
-                res.send(data);
+                console.log(err);
+                res.status(400);
+                res.send(err);
             }
-        }
-        
-    }).catch((err) => {
-        if (err.response) {
-            console.log(current + err.response.status);
-            res.status(err.response.status);
-            res.send(err.response.data);
-        } else {
-            console.log(err);
-            res.status(400);
-            res.send(err);
-        }
-    });
+        });
+    } else {
+        console.log("Unknown category");
+        response = {
+            status_code: 400,
+            error: "Unknown category!"
+        };
+        res.status(400);
+        res.send(response);
+    }
+    
 });
 
 let port = process.env.PORT;
