@@ -58,12 +58,6 @@ async function insertBatchData(category, docs) {
         const database = client.db(process.env.DB_NAME);
         const collection = database.collection(category);
 
-        let response = {
-            success: false,
-            operation: null,
-            ids: null
-        };
-
         const existingIds = await collection.distinct("mal_id");
         const toUpdate = [];
         const toInsert = [];
@@ -75,9 +69,10 @@ async function insertBatchData(category, docs) {
             }
         });
 
-        console.log(existingIds);
+        // console.log(existingIds);
         console.log(toUpdate.length, toInsert.length);
 
+        let response = [];
         if (toUpdate.length > 0) {
             const succeded = [];
             const failed = [];
@@ -90,19 +85,19 @@ async function insertBatchData(category, docs) {
                     failed.push(queryResult.upsertedId ?? doc.mal_id);
                 }
             };
-            response = {
+            response.push({
                 operation: "update",
                 success: succeded,
                 fail: failed
-            };
+            });
         }
         if (toInsert.length > 0) {
-            const queryResult = await collection.insertMany(docs);
-            response = {
+            const queryResult = await collection.insertMany(toInsert);
+            response.push({
                 operation: "insert",
                 success: queryResult.acknowledged,
                 ids: queryResult.insertedIds
-            };
+            });
         }
         return response;
     } finally {
