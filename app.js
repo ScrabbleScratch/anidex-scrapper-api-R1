@@ -68,11 +68,15 @@ async function insertBatchData(category, docs) {
         const toUpdate = [];
         const toInsert = [];
         docs.forEach(doc => {
-            if (existingIds.includes(doc.mal_id)) toUpdate.push(doc);
-            else toInsert.push(doc)
+            if (existingIds.includes(doc.mal_id)) {
+                toUpdate.push(doc);
+            } else {
+                toInsert.push(doc);
+            }
         });
 
-        // console.log(toUpdate.length, toInsert.length);
+        console.log(existingIds);
+        console.log(toUpdate.length, toInsert.length);
 
         if (toUpdate.length > 0) {
             const succeded = [];
@@ -80,8 +84,11 @@ async function insertBatchData(category, docs) {
             for (let i=0; i < toUpdate.length; i++) {
                 const doc = toUpdate[i];
                 const queryResult = await collection.updateOne({mal_id: doc.mal_id}, {$set: doc});
-                if (queryResult.acknowledged) succeded.push(queryResult.upsertedId ?? doc.mal_id)
-                else failed.push(queryResult.upsertedId ?? doc.mal_id)
+                if (queryResult.acknowledged) {
+                    succeded.push(queryResult.upsertedId ?? doc.mal_id);
+                } else {
+                    failed.push(queryResult.upsertedId ?? doc.mal_id);
+                }
             };
             response = {
                 operation: "update",
