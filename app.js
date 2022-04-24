@@ -35,20 +35,34 @@ async function checkExistance(category, id) {
     }
 }
 
+// GET ALL mal_id IN A COLLECTION
+async function getMALIds(category) {
+    let existingIds = [];
+    try {
+        await client.connect()
+        const database = client.db(process.env.DB_NAME);
+        const collection = database.collection(category);
+
+        existingIds = await collection.distinct("mal_id");
+    } finally {
+        await client.close();
+    }
+    return existingIds;
+}
+
 // INSERT DATA FROM SINGLE REQUEST
 async function insertSingleData(category, id, doc) {
+    let response = {
+        success: false,
+        operation: null,
+        id: null
+    };
     try {
         await client.connect();
         const database = client.db(process.env.DB_NAME);
         const collection = database.collection(category);
 
         const filter = {"mal_id": parseInt(id)};
-
-        let response = {
-            success: false,
-            operation: null,
-            id: null
-        };
 
         const existing = await collection.findOne(filter);
         if (existing) {
@@ -66,14 +80,15 @@ async function insertSingleData(category, id, doc) {
                 id: queryResult.insertedId
             };
         }
-        return response;
     } finally {
         await client.close();
     }
+    return response;
 }
 
 // INSERT DATA FROM BATCH REQUEST
 async function insertBatchData(category, docs) {
+    let response = [];
     try {
         await client.connect();
         const database = client.db(process.env.DB_NAME);
@@ -93,7 +108,6 @@ async function insertBatchData(category, docs) {
         // console.log(existingIds);
         console.log(toUpdate.length, toInsert.length);
 
-        let response = [];
         if (toUpdate.length > 0) {
             const succeded = [];
             const failed = [];
@@ -120,13 +134,32 @@ async function insertBatchData(category, docs) {
                 ids: queryResult.insertedIds
             });
         }
-        return response;
     } finally {
         await client.close();
     }
+    return response;
 }
 
 const availableCategories = ["anime", "characters", "manga"];
+
+// GET mal_id'S REQUEST
+app.get("/:category", async (req, res) => {
+    const category = req.params.category.toLowerCase();
+    if (availableCategories.includes(category)) {
+        const availableIds = await getMALIds(category);
+        const current = category.toUpperCase() + ": IDS: " + availableIds.length;
+        console.log(current);
+        res.send(availableIds);
+    } else {
+        console.log("Unknown category");
+        response = {
+            status_code: 400,
+            error: "Unknown category!"
+        };
+        res.status(response.status_code);
+        res.send(response);
+    }
+});
 
 // SINGLE REQUESTS
 app.get("/:category/:id", (req, res) => {
