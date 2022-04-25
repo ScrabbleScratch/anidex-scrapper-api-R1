@@ -251,7 +251,7 @@ app.get("/:category/:id/details", async (req, res) => {
                         current += " " + 501;
                     }
                 });
-                await sleep(1000);
+                await sleep(1500);
             };
             console.log(current);
             const response = await insertSingleData(category, id, doc);
