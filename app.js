@@ -15,10 +15,10 @@ const dbUri = process.env.DB_HOST;
 const client = new MongoClient(dbUri);
 
 // CHECK EXISTANCE OF AN ENTRY WITHIN DATABASE
-async function checkExistance(category, id) {
+async function checkExistance(version, category, id) {
     try {
         await client.connect();
-        const database = client.db(process.env.DB_NAME);
+        const database = client.db(process.env.DB_NAME + "_" + version);
         const collection = database.collection(category);
 
         const filter = {"mal_id": parseInt(id)};
@@ -36,11 +36,11 @@ async function checkExistance(category, id) {
 }
 
 // GET ALL mal_id IN A COLLECTION
-async function getMALIds(category) {
+async function getMALIds(version, category) {
     let existingIds = [];
     try {
         await client.connect()
-        const database = client.db(process.env.DB_NAME);
+        const database = client.db(process.env.DB_NAME + "_" + version);
         const collection = database.collection(category);
 
         existingIds = await collection.distinct("mal_id");
@@ -51,7 +51,7 @@ async function getMALIds(category) {
 }
 
 // INSERT DATA FROM SINGLE REQUEST
-async function insertSingleData(category, id, doc) {
+async function insertSingleData(version, category, id, doc) {
     let response = {
         success: false,
         operation: null,
@@ -59,7 +59,7 @@ async function insertSingleData(category, id, doc) {
     };
     try {
         await client.connect();
-        const database = client.db(process.env.DB_NAME);
+        const database = client.db(process.env.DB_NAME + "_" + version);
         const collection = database.collection(category);
 
         const filter = {"mal_id": parseInt(id)};
@@ -87,11 +87,11 @@ async function insertSingleData(category, id, doc) {
 }
 
 // INSERT DATA FROM BATCH REQUEST
-async function insertBatchData(category, docs) {
+async function insertBatchData(version, category, docs) {
     let response = [];
     try {
         await client.connect();
-        const database = client.db(process.env.DB_NAME);
+        const database = client.db(process.env.DB_NAME + "_" + version);
         const collection = database.collection(category);
 
         const existingIds = await collection.distinct("mal_id");
@@ -140,188 +140,233 @@ async function insertBatchData(category, docs) {
     return response;
 }
 
-const availableCategories = ["anime", "characters", "manga"];
+const availableVersions = ["v3", "v4"];
+const availableCategories = {
+    v3: ["anime", "character", "manga"],
+    v4: ["anime", "characters", "manga"]
+};
 
 // GET mal_id'S REQUEST
-app.get("/:category", async (req, res) => {
-    const category = req.params.category.toLowerCase();
-    if (availableCategories.includes(category)) {
-        const availableIds = await getMALIds(category);
-        const current = category.toUpperCase() + ": IDS: " + availableIds.length;
-        console.log(current);
-        res.send(availableIds);
+app.get("/:version/:category", async (req, res) => {
+    let response;
+    const version = req.params.version;
+    if (availableVersions.includes(version)) {
+        const category = req.params.category.toLowerCase();
+        if (availableCategories[version].includes(category)) {
+            const availableIds = await getMALIds(version, category);
+            const current = category.toUpperCase() + ": IDS: " + availableIds.length;
+            console.log(current);
+            response = availableIds;
+        } else {
+            console.log("Unknown category");
+            response = {
+                status_code: 400,
+                error: "Unknown category!"
+            };
+            res.status(response.status_code);
+        }
     } else {
-        console.log("Unknown category");
+        console.log("Unknown version");
         response = {
             status_code: 400,
-            error: "Unknown category!"
+            error: "Unknown version!"
         };
         res.status(response.status_code);
-        res.send(response);
     }
+    res.send(response);
 });
 
 // SINGLE REQUESTS
-app.get("/:category/:id", (req, res) => {
-    const category = req.params.category.toLowerCase();
-    const id = req.params.id;
-    if (availableCategories.includes(category)) {
-        const current = category.toUpperCase() + ": " + id + ": ";
-        Jikan.get(category+"/"+id).then(async ({status, data}) => {
-            if ("data" in data) {
-                console.log(current + status);
-                const response = await insertSingleData(category, id, data.data).catch(console.dir);
-                res.status(status);
-                res.send(response);
-            } else {
-                if ("status" in data) {
-                    console.log(current + data.status);
-                    res.status(data.status);
-                    res.send(data);
+app.get("/:version/:category/:id", async (req, res) => {
+    let response;
+    const version = req.params.version;
+    if (availableVersions.includes(version)) {
+        const category = req.params.category.toLowerCase();
+        const id = req.params.id;
+        if (availableCategories[version].includes(category)) {
+            const current = category.toUpperCase() + ": " + id + ": ";
+            await Jikan.get(version+"/"+category+"/"+id).then(async ({status, data}) => {
+                if (version === "v3" && "mal_id" in data) {
+                    console.log(current + status);
+                    response = await insertSingleData(version, category, id, data).catch(console.dir);
+                    res.status(status);
+                } else if (version === "v4" && "data" in data) {
+                    console.log(current + status);
+                    response = await insertSingleData(version, category, id, data.data).catch(console.dir);
+                    res.status(status);
                 } else {
-                    console.log(current + 501);
-                    res.status(501);
-                    res.send(data);
-                }
-            }
-            
-        }).catch((err) => {
-            if (err.response) {
-                console.log(current + err.response.status);
-                res.status(err.response.status);
-                res.send(err.response.data);
-            } else {
-                console.log(err);
-                res.status(400);
-                res.send(err);
-            }
-        });
-    } else {
-        console.log("Unknown category");
-        response = {
-            status_code: 400,
-            error: "Unknown category!"
-        };
-        res.status(response.status_code);
-        res.send(response);
-    }
-});
-
-app.get("/:category/:id/details", async (req, res) => {
-    const category = req.params.category.toLowerCase();
-    const id = req.params.id;
-    if (availableCategories.includes(category)) {
-        let current = category.toUpperCase() + " DETAILS: " + id + ": ";
-        if (await checkExistance(category, id)) {
-            let availableDetails;
-            switch (category) {
-                case "anime":
-                    availableDetails = ["characters", "staff", "pictures", "statistics", "recommendations", "relations", "themes", "external"];
-                    break;
-                case "characters":
-                    availableDetails = ["anime", "manga", "voices", "pictures"];
-                    break;
-                case "manga":
-                    availableDetails = ["characters", "pictures", "statistics", "recommendations", "relations", "external"];
-                    break;
-                default:
-                    availableDetails = [];
-                    break;
-            }
-            
-            // FUNCTION TO MAKE A PAUSE
-            function sleep(ms) {
-                return new Promise((resolve) => {
-                setTimeout(resolve, ms);
-                });
-            }
-
-            const doc = {};
-            for (let i=0; i < availableDetails.length; i++) {
-                const detail = availableDetails[i];
-                await Jikan.get(category+"/"+id+"/"+detail).then(async ({status, data}) => {
-                    if ("data" in data) {
-                        if ("status" in data) {
-                            current += " " + data.status;
-                        } else {
-                            current += " " + status;
-                            doc[detail+"_data"] = data.data;
-                        }
+                    if ("status" in data) {
+                        console.log(current + data.status);
+                        res.status(data.status);
                     } else {
-                        current += " " + 501;
+                        console.log(current + 501);
+                        res.status(501);
                     }
-                });
-                await sleep(1500);
-            };
-            console.log(current);
-            const response = await insertSingleData(category, id, doc);
-            res.send(response);
+                    response = data;
+                }
+            }).catch((err) => {
+                if (err.response) {
+                    console.log(current + err.response.status);
+                    res.status(err.response.status);
+                    response = err.response.data;
+                } else {
+                    console.log(err);
+                    res.status(400);
+                    response = err;
+                }
+            });
         } else {
+            console.log("Unknown category");
             response = {
-                status_code: 406,
-                error: "Id not found within database. Add it before requesting details!"
+                status_code: 400,
+                error: "Unknown category!"
             };
             res.status(response.status_code);
-            res.send(response);
         }
     } else {
-        console.log("Unknown category");
+        console.log("Unknown version");
         response = {
             status_code: 400,
-            error: "Unknown category!"
+            error: "Unknown version!"
         };
         res.status(response.status_code);
-        res.send(response);
     }
+    res.send(response);
+});
+
+app.get("/:version/:category/:id/details", async (req, res) => {
+    let response;
+    const version = req.params.version;
+    if (version === "v4") {
+        const category = req.params.category.toLowerCase();
+        const id = req.params.id;
+        if (availableCategories[version].includes(category)) {
+            let current = category.toUpperCase() + " DETAILS: " + id + ": ";
+            if (await checkExistance(version, category, id)) {
+                let availableDetails;
+                switch (category) {
+                    case "anime":
+                        availableDetails = ["characters", "staff", "pictures", "statistics", "recommendations", "relations", "themes", "external"];
+                        break;
+                    case "characters":
+                        availableDetails = ["anime", "manga", "voices", "pictures"];
+                        break;
+                    case "manga":
+                        availableDetails = ["characters", "pictures", "statistics", "recommendations", "relations", "external"];
+                        break;
+                    default:
+                        availableDetails = [];
+                        break;
+                }
+                
+                // FUNCTION TO MAKE A PAUSE
+                function sleep(ms) {
+                    return new Promise((resolve) => {
+                    setTimeout(resolve, ms);
+                    });
+                }
+
+                const doc = {};
+                for (let i=0; i < availableDetails.length; i++) {
+                    const detail = availableDetails[i];
+                    await Jikan.get(version+"/"+category+"/"+id+"/"+detail).then(async ({status, data}) => {
+                        if ("data" in data) {
+                            if ("status" in data) {
+                                current += " " + data.status;
+                            } else {
+                                current += " " + status;
+                                doc[detail+"_data"] = data.data;
+                            }
+                        } else {
+                            current += " " + 501;
+                        }
+                    });
+                    await sleep(1500);
+                };
+                console.log(current);
+                response = await insertSingleData(version, category, id, doc);
+            } else {
+                response = {
+                    status_code: 406,
+                    error: "Id not found within database. Add it before requesting details!"
+                };
+                res.status(response.status_code);
+            }
+        } else {
+            console.log("Unknown category");
+            response = {
+                status_code: 400,
+                error: "Unknown category!"
+            };
+            res.status(response.status_code);
+        }
+    } else {
+        console.log("Unknown version");
+        response = {
+            status_code: 400,
+            error: "Unknown version!"
+        };
+        res.status(response.status_code);
+    }
+    res.send(response);
 });
 
 // BATCH REQUESTS
-app.get("/batch/:category/:page", (req, res) => {
-    const category = req.params.category.toLowerCase();
-    const page = req.params.page;
-    if (availableCategories.includes(category)) {
-        const current = category.toUpperCase() + " PAGE: " + page + ": ";
-        Jikan.get(category+"?page="+page).then(async ({status, data}) => {
-            if ("data" in data && "pagination" in data) {
-                console.log(current + status);
-                const dbRS = await insertBatchData(category, data.data).catch(console.dir);
-                const response = {
-                    pagination: data.pagination,
-                    response: dbRS
-                }
-                res.status(status);
-                res.send(response);
-            } else {
-                if ("status" in data) {
-                    console.log(current + data.status);
-                    res.status(data.status);
-                    res.send(data);
+app.get("/:version/batch/:category/:page", async (req, res) => {
+    let response;
+    const version = req.params.version;
+    if (version === "v4") {
+        const category = req.params.category.toLowerCase();
+        if (availableCategories[version].includes(category)) {
+            const page = req.params.page;
+            const current = category.toUpperCase() + " PAGE: " + page + ": ";
+            await Jikan.get(version+"/"+category+"?page="+page).then(async ({status, data}) => {
+                if ("data" in data && "pagination" in data) {
+                    console.log(current + status);
+                    const dbRS = await insertBatchData(version, category, data.data).catch(console.dir);
+                    response = {
+                        pagination: data.pagination,
+                        response: dbRS
+                    }
+                    res.status(status);
                 } else {
-                    console.log(current + 501);
-                    res.status(501);
-                    res.send(data);
+                    if ("status" in data) {
+                        console.log(current + data.status);
+                        res.status(data.status);
+                    } else {
+                        console.log(current + 501);
+                        res.status(501);
+                    }
+                    response = data;
                 }
-            }
-        }).catch((err) => {
-            if (err.response) {
-                console.log(current + err.response.status);
-                res.status(err.response.status);
-                res.send(err.response.data);
-            } else {
-                console.log(err);
-                res.status(400);
-                res.send(err);
-            }
-        });
+            }).catch((err) => {
+                if (err.response) {
+                    console.log(current + err.response.status);
+                    res.status(err.response.status);
+                    reponse = err.response.data;
+                } else {
+                    console.log(err);
+                    res.status(400);
+                    response = err;
+                }
+            });
+        } else {
+            console.log("Unknown category");
+            response = {
+                status_code: 400,
+                error: "Unknown category!"
+            };
+            res.status(response.status_code);
+        }
     } else {
-        console.log("Unknown category");
+        console.log("Unknown version");
         response = {
             status_code: 400,
-            error: "Unknown category!"
+            error: "Unknown version!"
         };
         res.status(response.status_code);
-        res.send(response);
     }
+    res.send(response);
 });
 
 let port = process.env.PORT;
