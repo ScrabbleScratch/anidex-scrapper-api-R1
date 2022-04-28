@@ -296,13 +296,14 @@ app.get("/:version/:category/:id/:info", async (req, res) => {
             if (availableVersions[version][category].includes(info)) {
                 const id = req.params.id;
                 const db = req.query.db;
+                const docName = req.query.name;
                 if (await checkExistance(version, category, id, db)) {
                     const current = category.toUpperCase() + ": " + info.toUpperCase() + ": " + id + ": ";
                     await Jikan.get(version+"/"+category+"/"+id+"/"+info).then(async ({status, data}) => {
                         if (version === "v4" && "data" in data) {
                             console.log(current + status);
                             const doc = {
-                                [info+"_data"]: data.data
+                                [docName ?? (info+"_data")]: data.data
                             }
                             response = await insertSingleData(version, category, id, doc, req.query.db).catch(console.dir);
                             response.data = doc;
