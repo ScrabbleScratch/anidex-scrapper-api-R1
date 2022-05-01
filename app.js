@@ -368,66 +368,11 @@ app.get("/:version/:category/:id/:info", async (req, res) => {
     res.send(response);
 });
 
-// BATCH REQUESTS
-// app.get("/:version/:category/batch/:page", async (req, res) => {
-//     let response;
-//     const version = req.params.version;
-//     if (version === "v4") {
-//         const category = req.params.category.toLowerCase();
-//         if (category in availableVersions[version]) {
-//             const page = req.params.page;
-//             const current = category.toUpperCase() + " PAGE: " + page + ": ";
-//             await Jikan.get(version+"/"+category+"?page="+page).then(async ({status, data}) => {
-//                 if ("data" in data && "pagination" in data) {
-//                     console.log(current + status);
-//                     const dbRS = await insertBatchData(version, category, data.data, req.query.db).catch(console.dir);
-//                     response = {
-//                         pagination: data.pagination,
-//                         response: dbRS
-//                     }
-//                     res.status(status);
-//                 } else {
-//                     if ("status" in data) {
-//                         console.log(current + data.status);
-//                         res.status(data.status);
-//                     } else {
-//                         console.log(current + 501);
-//                         res.status(501);
-//                     }
-//                     response = data;
-//                 }
-//             }).catch((err) => {
-//                 if (err.response) {
-//                     console.log(current + err.response.status);
-//                     res.status(err.response.status);
-//                     reponse = err.response.data;
-//                 } else {
-//                     console.log(err);
-//                     res.status(400);
-//                     response = err;
-//                 }
-//             });
-//         } else {
-//             console.log("Unknown category");
-//             response = {
-//                 status_code: 400,
-//                 error: "Unknown category!"
-//             };
-//             res.status(response.status_code);
-//         }
-//     } else {
-//         console.log("Unknown version");
-//         response = {
-//             status_code: 400,
-//             error: "Unknown version!"
-//         };
-//         res.status(response.status_code);
-//     }
-//     res.send(response);
-// });
-
 let port = process.env.PORT;
 if (port == null || port == "") {
   port = 3000;
 }
 app.listen(port, () => {console.log("Server running!")});
+
+// EXPORT EXPRESS API
+module.exports = app;
