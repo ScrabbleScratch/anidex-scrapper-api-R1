@@ -108,60 +108,6 @@ async function insertSingleData(version, collectionName, id, doc, dbName) {
     return response;
 }
 
-// INSERT DATA FROM BATCH REQUEST
-async function insertBatchData(version, collectionName, docs, dbName) {
-    let response = [];
-    try {
-        await client.connect();
-        const database = client.db(dbName ?? (process.env.DB_NAME + "_" + version));
-        const collection = database.collection(collectionName);
-
-        const existingIds = await collection.distinct("mal_id");
-        const toUpdate = [];
-        const toInsert = [];
-        docs.forEach(doc => {
-            if (existingIds.includes(doc.mal_id)) {
-                toUpdate.push(doc);
-            } else {
-                toInsert.push(doc);
-            }
-        });
-
-        // console.log(existingIds);
-        console.log(toUpdate.length, toInsert.length);
-
-        if (toUpdate.length > 0) {
-            const succeded = [];
-            const failed = [];
-            for (let i=0; i < toUpdate.length; i++) {
-                const doc = toUpdate[i];
-                const queryResult = await collection.updateOne({mal_id: doc.mal_id}, {$set: doc});
-                if (queryResult.acknowledged) {
-                    succeded.push(queryResult.upsertedId ?? doc.mal_id);
-                } else {
-                    failed.push(queryResult.upsertedId ?? doc.mal_id);
-                }
-            };
-            response.push({
-                operation: "update",
-                success: succeded,
-                fail: failed
-            });
-        }
-        if (toInsert.length > 0) {
-            const queryResult = await collection.insertMany(toInsert);
-            response.push({
-                operation: "insert",
-                success: queryResult.acknowledged,
-                ids: queryResult.insertedIds
-            });
-        }
-    } finally {
-        await client.close();
-    }
-    return response;
-}
-
 const availableVersions = {
     v3: {
         anime: [],
@@ -220,6 +166,7 @@ app.get("/:version/:category/info", async (req, res) => {
             console.log(current);
             response = {
                 success: true,
+                operation: 'check',
                 data: availableVersions[version][category]
             }
         } else {
